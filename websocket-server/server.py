@@ -1,40 +1,36 @@
-import asyncio
+import socketio
+import tornado
 import json
-import websockets
- 
-# create handler for each connection
-CONNECTIONS = {}
+
+sio = socketio.AsyncServer(async_mode='tornado',cors_allowed_origins='*')
+app = tornado.web.Application(
+    [
+        (r"/socket.io/", socketio.get_tornado_handler(sio)),
+    ],
+    # ... other application options
+)
 
 
-async def handler(sourceWebsocket, path):
-    print("WebSocket: Server Started.")
-    try:
-        while True:
-            # Receiving values from client
-            client_msg = await sourceWebsocket.recv()
-            
- 
-            # Sending a response back to the client
-            userRq = json.loads(client_msg)
-            userId = userRq['userId']
-            CONNECTIONS[userId] = sourceWebsocket
-            await sourceWebsocket.send(json.dumps(
-                {
-                    "userBody": userRq
-                }
-            ))
- 
-    except websockets.ConnectionClosedError as e:
-        print("Internal Server Error.")
-    except websockets.exceptions.ConnectionClosed as e:
-        print("client out")
- 
- 
- 
-start_server = websockets.serve(handler, "localhost", 8000)
- 
- 
- 
-asyncio.get_event_loop().run_until_complete(start_server)
- 
-asyncio.get_event_loop().run_forever()
+@sio.on("health-check")
+async def common(sid, userRq):
+    # Sending a response back to the client
+    if type(userRq) is not dict:
+        userRq = json.loads(userRq)
+    print(f"recive: common: {userRq}")
+    userId = userRq['userId']
+    await sio.emit("re-health-check", json.dumps(
+        {
+            "userBody": userRq
+        }
+    ), room=sid)
+
+@sio.event
+async def connect(sid, environ, auth):
+    print("connect ", sid)
+    await sio.emit("message", f"connected {sid}", room=sid)
+@sio.event
+def disconnect(sid):
+    print("disconnect", sid)
+
+app.listen(8000)
+tornado.ioloop.IOLoop.current().start()
